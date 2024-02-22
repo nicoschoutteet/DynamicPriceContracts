@@ -5,7 +5,7 @@ account: nicoschoutteet
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 11234582
-bundleId: 8281220
+bundleId: 8285341
 url: https://nicoschoutteet.shinyapps.io/DynamicPriceContracts/
 version: 1
 quarto_version: 1.3.353

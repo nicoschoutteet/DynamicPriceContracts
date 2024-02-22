@@ -401,7 +401,7 @@ output$DailyConsumptionPlot <- renderGirafe({
 })
 ```
 
-The electricity consumption on the selected date, according to the selected consumption profile, is shown in @fig-daily-consumption. The blue line shows the actual consumption (either user-defined or according to the RLP), while the green line shows consumption shifted with the selected flexibility percentage from the highest-priced to the lowest-\^priced hours. The red line indicates the inverse situation: consumption is shifted from the lowest-priced to the highest-priced hours.
+The electricity consumption on the selected date, according to the selected consumption profile, is shown in @fig-daily-consumption. The blue line shows the actual consumption (either user-defined or according to the RLP), while the green line shows consumption shifted with the selected flexibility percentage from the highest-priced to the lowest-priced hours. The red line indicates the inverse situation: consumption is shifted from the lowest-priced to the highest-priced hours.
 
 ```{r}
 #| label: fig-daily-consumption
@@ -760,4 +760,4 @@ The tool is a personal project, written by Nico Schoutteet. Questions, comments 
 
 The source code for this tool is available via GitHub.
 
-{{< bi github size=20px >}} [GitHub repository](https://github.com/nicoschoutteet/DynamicPrices "Link to GitHub repository"){target="_blank"}
+{{< bi github size=20px >}} [GitHub repository](https://github.com/nicoschoutteet/DynamicPriceContracts "Link to GitHub repository"){target="_blank"}
