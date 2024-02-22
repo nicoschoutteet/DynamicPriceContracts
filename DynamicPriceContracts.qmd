@@ -1,0 +1,763 @@
+---
+title: "Dynamic price contracts"
+subtitle: "Quantifying the financial impact of responding to the market price signal, and assessing the savings' potential for residential consumers"
+format: 
+  html:
+    toc: true
+date: today
+author: "Nico Schoutteet"
+server: shiny
+execute:    
+  echo: false   
+  warning: false
+fig-cap-location: top
+---
+
+```{r}
+library(tidyverse)
+library(shiny)
+library(ggiraph)
+library(reactable)
+```
+
+```{r}
+#| context: server
+library(tidyverse)
+library(shiny)
+library(ggiraph)
+library(reactable)
+```
+
+{{< bi linkedin color=#0077B5 size=20px >}} *A LinkedIn article with more information on dynamic price contracts can be accessed [here](https://www.linkedin.com/in/nicoschoutteet/ "External link to LinkedIn article on dynamic prices"){target="_blank"}.*
+
+::: {.callout-caution collapse="true"}
+## Disclaimer regarding the use of this tool and the interpretation of its results
+
+This tool is the result of a **personal project**, built for educational purposes, to demonstrate the link between residential flexibility and the financial impact of a well-informed choice for dynamic price contracts for the consumption of electricity. The aim of this application is to provide additional insight to the ongoing debate on dynamic prices and (residential) demand flexibility.
+
+**This is not a price-comparison tool**: there are no formulas for active contracts in the Belgian retail market, nor links to any suppliers (of dynamic or any other contracts). The results displayed should hence not be considered as guidance on which (type of) contract to consider.
+
+Finally, and most importantly, this is a personal contribution to the debate, done in my free time. Any interpretation of its messages, or results, are the responsibility of the author and the user only, and they should not be interpreted as a formal position, or guidance, of my employer.
+:::
+
+```{r}
+#| context: server
+options(shiny.maxRequestSize=30*1024^2)
+source("DataImport.R")
+```
+
+## A brief introduction to dynamic prices
+
+Demand response and demand flexibility are key elements in Europe's policy to decarbonize the electricity sector, and a crucial enabler of a successful energy transition. In an electric system characterized by high levels of renewable energy sources, the role of demand response (and storage) becomes increasingly important.
+
+In order to provide a financial incentive for (industrial or residential) consumers to adapt their electricity consumption, dynamic price contracts may be an effective way to respond to market (price) signals.
+
+However, the effectiveness of dynamic price contracts to unlock residential flexibilty critically relies on its user:
+
+-   consumers need to have a significant share of electricity consumption that may be adapted to the price signal (typically electric vehicles, heat pumps, residential storage systems, etc.); and
+
+-   consumers need to actively follow, and respond to, electricity market prices. Alternatively, electricity consumers should have tools and/or systems installed so that its appliances are automatically programmed to run when prices are lowest.
+
+By responding correctly to the market price signal, the benefits can be identified on two levels:
+
+-   for individual consumers: by means of lower cost of electricity consumption
+
+-   for society as a whole: by providing a more stable equilibrium between supply and demand, reducing the needs for additional investments, and speeding up the integration of renewables.
+
+::: {.callout-tip collapse="true"}
+## What are dynamic price contracts?
+
+***'dynamic electricity price contract'** means an electricity supply contract between a supplier and a final customer that reflects the price variation in the spot markets, including in the day-ahead and intraday markets, at intervals at least equal to the market settlement frequency;*
+
+\~ Electricity Directive (EU) 2019/944, Article 2(15)
+
+------------------------------------------------------------------------
+
+🧐 *What's that?* In non-legalese, an electricity supply contract is dynamic when the unit price (in c€/kWh, or €/MWh) for the energy component of electricity is based on the actual (day-ahead) wholesale price of the hour during which electricity is consumed.
+
+This is opposed to fixed-price contracts (where a single unit price is determined for the energy component during the contract period) and variable-priced contracts (where the unit price is indexed a number of times during the contract period, typically at monthly or quarterly intervals).
+
+Of course, such dynamic price contracts require that consumers, and suppliers, have access to the hourly electricity offtake data: the consumer should have a digital, or smart, meter installed.
+
+More information regarding dynamic price contracts in Flanders can be found [here](https://www.vreg.be/nl/faq/dynamische-contracten "External link to Flemish regulator's FAQ on dynamic contracts"){target="_blank"}.
+:::
+
+## What's the purpose of this tool?
+
+This application is built to provide insight in the link between **residential flexibility** (shifting consumption in response to the market price signal) and the **cost of electricity under dynamic price contracts**.
+
+Users have the options to define input parameters related to electricity consumption and flexibility potential. The results of the calculation show how increasing the flexible part of electricity consumption impacts a consumers' electricity bill.
+
+By adapting the input parameters, the user of this cool can gain an understanding on the impact of dynamic price contracts, the importance of actively monitoring electricity prices and adapting its consumption profile.
+
+## Let's get started: user input
+
+The user interface elements below allow to mimic - with certain simplifications - a consumers' personal situation and preferences. These parameters are used to calculate the results below.
+
+*Currently, the tool supports user-uploaded consumption profiles, based on the data format from Fluvius' customers who have smart meters installed (with quarter-hourly data registration active). If you want to find out how to download this data, have a look at the instructions provided by Fluvius. **Please ensure that you download the correct timeframe: from 1 January 2023 to 1 January 2024 (included)**. The generated CSV-file can then be uploaded below.*
+
+```{r}
+#| panel: input
+
+fluidPage(
+  fluidRow(
+    strong("Input parameters regarding consumption profile"),
+  ),
+  br(),
+  fluidRow(
+    column(4,
+           radioButtons("SelectedProfile",
+                        "Select consumption profile:",
+                        choices = c("Default", "User-defined"))),
+    column(4,
+           conditionalPanel(
+             condition = "input.SelectedProfile == 'Default'",
+             numericInput("UserConsumption", 
+                          "Annual consumption (kWh):",
+                          value = 3500),
+             br()
+             ),
+           conditionalPanel(
+             condition = "input.SelectedProfile == 'User-defined'",
+             fileInput("UserProfile", "Upload consumption profile:")
+             )
+           ),
+    column(4,
+           conditionalPanel(
+             condition = "input.SelectedProfile == 'Default'",
+             htmlOutput("DefaultConsumptionText"),
+             br()
+             ),
+           conditionalPanel(
+             condition = "input.SelectedProfile == 'User-defined'",
+             strong("Annual consumption (kWh):"),
+             htmlOutput("UserConsumptionText"),
+           )
+    )
+  ),
+  hr(),
+  fluidRow(
+    strong("Input parameters regarding residential flexibility")
+  ),
+  br(),
+  fluidRow(
+    column(4,
+           sliderInput("Flexibility",
+                       "Flexible share of consumption:",
+                       min = 0, max = 100, value = 25,
+                       post = "%", ticks = FALSE)
+           ),
+    column(4,
+           numericInput(
+             "FlexibleHours",
+             "Number of hours with flexible consumption:",
+                       min = 1, max = 12, value = 6)
+           ),
+    column(4
+           
+           )
+  )
+)
+```
+
+```{r}
+#| context: server
+output$DefaultConsumptionText <- renderText({
+  paste0("<em>The consumption of ", 
+         format(input$UserConsumption, big.mark = "."), 
+         " kWh will be allocated according to Synergrid's RLP0.</em>")
+})
+
+output$UserConsumptionText <- renderText({
+  format(round(sum(df()$Consumption, na.rm = TRUE), 1),
+         big.mark = ".", decimal.mark = ",")
+  })
+
+df <- reactive({
+  
+  if(input$SelectedProfile == "Default") {
+  
+  df_rd %>% 
+      mutate(Consumption = Profile * input$UserConsumption) %>% 
+      group_by(as.Date(DateTime, tz = "Europe/Brussels")) %>% 
+      mutate(HighLow = case_when(rank(-Price, 
+                                      ties.method = "random") %in% 
+                                   1:input$FlexibleHours ~ "H",
+                                 rank(Price,
+                                      ties.method = "random") %in% 
+                                   1:input$FlexibleHours ~ "L",
+                                 TRUE ~ NA),
+             FlexConsumptionGood = case_when(HighLow == "H"
+                                             ~ Consumption * 
+                                               (1 - input$Flexibility * .01),
+                                             HighLow == "L"
+                                             ~ Consumption + 
+                                               sum(Consumption[HighLow == "H"],
+                                                   na.rm = TRUE) * 
+                                               input$Flexibility * .01 / 
+                                               input$FlexibleHours,
+                                             TRUE ~ Consumption),
+             FlexConsumptionBad = case_when(HighLow == "L"
+                                             ~ Consumption * 
+                                              (1 - input$Flexibility * .01),
+                                             HighLow == "H"
+                                             ~ Consumption + 
+                                               sum(Consumption[HighLow == "L"],
+                                                   na.rm = TRUE) * 
+                                              input$Flexibility * .01  / 
+                                              input$FlexibleHours,
+                                             TRUE ~ Consumption))
+    
+  } else if (input$SelectedProfile == "User-defined") {
+    
+    df_rd %>% 
+      select(-Profile) %>% 
+      left_join(
+        read_csv2(input$UserProfile$datapath) %>%
+          mutate(DateTime = with_tz(as.POSIXct(paste(as.Date(
+            `Van Datum`, "%d-%m-%Y"), `Van Tijdstip`)),
+            tz = "Europe/Brussels")) %>%
+          filter(Register %in% c("Afname Nacht", "Afname Dag")) %>% 
+      group_by(DateTime = floor_date(DateTime, "1 hour")) %>% 
+      summarize(Consumption = sum(Volume, na.rm = TRUE)) %>% 
+      ungroup() %>% 
+      arrange(DateTime) %>% 
+      mutate(Profile = Consumption / sum(Consumption, na.rm = TRUE))
+      ) %>% 
+      select(DateTime, Price, Profile, Consumption) %>% 
+      group_by(as.Date(DateTime, tz = "Europe/Brussels")) %>% 
+      mutate(HighLow = case_when(rank(-Price, 
+                                      ties.method = "random") %in% 
+                                   1:input$FlexibleHours ~ "H",
+                                 rank(Price,
+                                      ties.method = "random") %in% 
+                                   1:input$FlexibleHours ~ "L",
+                                 TRUE ~ NA),
+             FlexConsumptionGood = case_when(HighLow == "H"
+                                             ~ Consumption * 
+                                               (1 - input$Flexibility * .01),
+                                             HighLow == "L"
+                                             ~ Consumption + 
+                                               sum(Consumption[HighLow == "H"],
+                                                   na.rm = TRUE) * 
+                                               input$Flexibility * .01 / 
+                                               input$FlexibleHours,
+                                             TRUE ~ Consumption),
+             FlexConsumptionBad = case_when(HighLow == "L"
+                                             ~ Consumption * 
+                                              (1 - input$Flexibility * .01),
+                                             HighLow == "H"
+                                             ~ Consumption + 
+                                               sum(Consumption[HighLow == "L"],
+                                                   na.rm = TRUE) * 
+                                              input$Flexibility * .01  / 
+                                              input$FlexibleHours,
+                                             TRUE ~ Consumption))
+  } 
+  
+})
+```
+
+*The results below will be automatically updated to reflect the user's input parameters. Please be patient, the underlying calculations need some time to run before the results can be visualized.*
+
+## A visual example on how to shift consumption
+
+*The way in which this tool calculates the total energy cost of a dynamic price contracts, with or without shift in consumption, is demonstrated visually in the two figures and table below. You can select a date at random in the year 2023 to see how consumption can be shifted from high-priced to low-priced hours, and vice versa, and the impact this has on the total cost of the consumption profile.*
+
+```{r}
+dateInput("SelectedDate",
+          "Select a date:",
+          min = as.Date("2023-01-01", tz = "Europe/Brussels"),
+          max = as.Date("2023-12-31", tz = "Europe/Brussels"),
+          value = as.Date("2023-01-01", tz = "Europe/Brussels"))
+```
+
+```{r}
+#| context: server
+output$DailyPricesPlot <- renderGirafe({
+  
+  plot <- ggplot(data = filter(df(), as.Date(DateTime, tz = "Europe/Brussels")
+                       == as.Date(input$SelectedDate, tz = "Europe/Brussels")),
+         mapping = aes(x = hour(DateTime), y = Price)) +
+    geom_hline(yintercept = 0,
+               linewidth = .15, linetype = "solid", colour = "black") +
+    geom_text(mapping = aes(y = Price + 1, label = HighLow),
+               vjust = 0, size = 3, 
+               colour = "black") +
+    geom_step(direction = "mid", colour = "#7eb0d5") +
+    geom_point_interactive(shape = 19, colour = "#7eb0d5", hover_nearest = TRUE,
+                           mapping = aes(group = 1,
+                                         data_id = DateTime,
+                                         tooltip = paste0("Day ahead price on ",
+                                                         format(DateTime,
+                                                                "%d %B %Y %H:%M"),
+                                                         ":\n",
+                                                         format(round(Price, 1),
+                                                                decimal.mark =",",
+                                                                big.mark = "."),
+                                                         " EUR/MWh"))) +
+    scale_x_continuous(name = element_blank(),
+                       breaks = seq(0, 23, 1)) +
+    scale_y_continuous(name = element_blank(),
+                       labels = scales::number_format(suffix = " €/MWh")) +
+    theme_minimal() +
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.y = element_line(linewidth = .1,
+                                            linetype = "dashed",
+                                            colour = "darkgrey"))
+  
+  girafe(ggobj = plot,
+         width_svg = 10,
+         height_svg = 6,
+         options = list(
+           opts_selection(
+             type = "single"))) %>% 
+    girafe_options(opts_zoom(min = 1, max = 5))
+  
+})
+```
+
+@fig-daily-prices shows the hourly prices on the selected date. The highest-priced hours are indicated with "H", the lowest-priced hours are indicated with "L".
+
+```{r}
+#| label: fig-daily-prices
+#| fig-cap: "Daily profile of day-ahead prices (in €/MWh)"
+#| column: body-outset
+girafeOutput("DailyPricesPlot")
+```
+
+```{r}
+#| context: server
+output$DailyConsumptionPlot <- renderGirafe({
+  
+  plot <- ggplot(data = filter(df(), as.Date(DateTime, tz = "Europe/Brussels")
+                       == as.Date(input$SelectedDate, tz = "Europe/Brussels")),
+         mapping = aes(x = hour(DateTime))) +
+    geom_step(mapping = aes(y = FlexConsumptionGood),
+              direction = "mid", colour = "#b2e061") +
+    geom_point_interactive(shape = 19, colour = "#b2e061", hover_nearest = TRUE,
+                           mapping = aes(y = FlexConsumptionGood,
+                                         group = 1,
+                                         data_id = DateTime,
+                                         tooltip = paste0(
+                                           "Electricity offtake including ",
+                                           input$Flexibility, 
+                                           "%\nshift in correct direction:\n",
+                                           format(round(FlexConsumptionGood, 1),
+                                                  big.mark = ".", 
+                                                  decimal.mark = ","),
+                                           " kWh."))) +
+    geom_step(mapping = aes(y = FlexConsumptionBad),
+              direction = "mid", colour = "#fd7f6f") +
+    geom_point_interactive(shape = 19, colour = "#fd7f6f", hover_nearest = TRUE,
+                           mapping = aes(y = FlexConsumptionBad,
+                                         group = 1,
+                                         data_id = DateTime,
+                                         tooltip = paste0(
+                                           "Electricity offtake including ",
+                                           input$Flexibility, 
+                                           "%\nshift in wrong direction:\n",
+                                           format(round(FlexConsumptionBad, 1),
+                                                  big.mark = ".", 
+                                                  decimal.mark = ","),
+                                           " kWh."))) +
+    geom_step(mapping = aes(y = Consumption),
+              direction = "mid", colour = "#7eb0d5") +
+    geom_point_interactive(shape = 19, colour = "#7eb0d5", hover_nearest = TRUE,
+                           mapping = aes(y = Consumption,
+                                         group = 1,
+                                         data_id = DateTime,
+                                         tooltip = paste0(
+                                           "Actual electricity offtake\n",
+                                           "without shift:\n",
+                                           format(round(Consumption, 1),
+                                                  big.mark = ".", 
+                                                  decimal.mark = ","),
+                                           " kWh."))) +
+    scale_x_continuous(name = element_blank(),
+                       breaks = seq(0, 23, 1)) +
+    scale_y_continuous(name = element_blank(),
+                       labels = scales::number_format(suffix = " kWh",
+                                                      big.mark = ".",
+                                                      decimal.mark = ",")) +
+    theme_minimal() +
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.y = element_line(linewidth = .1,
+                                            linetype = "dashed",
+                                            colour = "darkgrey"))
+  
+  girafe(ggobj = plot,
+         width_svg = 10,
+         height_svg = 6,
+         options = list(
+           opts_selection(
+             type = "single"))) %>% 
+    girafe_options(opts_zoom(min = 1, max = 5))
+  
+})
+```
+
+The electricity consumption on the selected date, according to the selected consumption profile, is shown in @fig-daily-consumption. The blue line shows the actual consumption (either user-defined or according to the RLP), while the green line shows consumption shifted with the selected flexibility percentage from the highest-priced to the lowest-\^priced hours. The red line indicates the inverse situation: consumption is shifted from the lowest-priced to the highest-priced hours.
+
+```{r}
+#| label: fig-daily-consumption
+#| fig-cap: "Daily profile of electricity consumption (in kWh)"
+#| column: body-outset
+girafeOutput("DailyConsumptionPlot")
+```
+
+```{r}
+#| context: server
+output$DailyConsumptionTable <- renderReactable({
+  
+  df() %>% 
+    filter(as.Date(DateTime, tz = "Europe/Brussels") 
+           == as.Date(input$SelectedDate, tz = "Europe/Brussels")) %>% 
+    mutate("NoShift" = Price * Consumption,
+           "GoodShift" = Price * FlexConsumptionGood,
+           "BadShift" = Price * FlexConsumptionBad) %>% 
+    group_by(Year = year(DateTime)) %>%
+    summarize(NoShift = sum(NoShift, na.rm = TRUE),
+              GoodShift = sum(GoodShift, na.rm = TRUE),
+              BadShift = sum(BadShift, na.rm = TRUE),
+              Consumption = sum(Consumption, na.rm = TRUE)) %>%
+    pivot_longer(-c(Year, Consumption), names_to = "Contract", values_to = "Cost") %>%
+    mutate(Contract = recode(Contract,
+                            "NoShift" = 
+                              "Dynamic without consumption shift",
+                            "GoodShift" = 
+                              "Dynamic with shift in right direction",
+                            "BadShift" = 
+                              "Dynamic with shift in wrong direction"),
+      ConsumptionShift = c(0, 
+                           input$Flexibility * .01, 
+                           input$Flexibility * .01),
+      TotalCost = Cost / 1000,
+      UnitCost = Cost / Consumption / 10) %>% 
+    select(Contract, ConsumptionShift, 
+           Consumption, TotalCost, UnitCost) %>% 
+    reactable(
+      columns = list(
+      Contract = colDef(name = ""),
+      ConsumptionShift = colDef(name = "Consumption shift",
+        format = colFormat(percent = TRUE,
+                           locales = "NL-be")),
+      Consumption = colDef(name = "Daily consumption",
+        format = colFormat(separators = TRUE,
+                           suffix = " kWh",
+                           digits = 2,
+                           locales = "NL-be")),
+      TotalCost = colDef(name = "Yearly total cost",
+        format = colFormat(suffix = " €",
+                           digits = 2,
+                           locales = "NL-be")),
+      UnitCost = colDef(name = "Yearly unit cost (volume-weighted)",
+        format = colFormat(suffix = " c€/kWh",
+                           digits = 2,
+                           locales = "NL-be"))
+    )
+    )
+  
+}) 
+
+```
+
+The total cost of electricity consumption on the selected date is calculated in the table below. This is done by multiplying the market price in @fig-daily-prices with the different consumption profiles (blue, green, red) in @fig-daily-consumption.
+
+```{r}
+reactableOutput("DailyConsumptionTable")
+```
+
+## Results: the savings' potential of dynamic price contracts
+
+In @fig-daily-calendar, the total daily energy cost without consumption shift is compared to the total daily cost where consumption is shifted with 100% during the selected hours. Days with a higher savings potential (i.e. the cost of shifted consumption is much lower than the cost of the actual consumption) have a darker shade of green, days with lower potential are a lighter shade. Days where the savings' potential exceeds 100%, are indicated in dark green.
+
+```{r}
+#| context: server
+
+df_daily <- reactive({
+  
+  df() %>% 
+    select(DateTime, Price, Profile, Consumption, HighLow) %>% 
+     group_by(as.Date(DateTime, tz = "Europe/Brussels")) %>% 
+      mutate(FlexConsumptionGood = case_when(HighLow == "H"
+                                             ~ Consumption * 
+                                               (1 - 100 * .01),
+                                             HighLow == "L"
+                                             ~ Consumption + 
+                                               sum(Consumption[HighLow == "H"],
+                                                   na.rm = TRUE) * 
+                                               100 * .01 / 
+                                               input$FlexibleHours,
+                                             TRUE ~ Consumption),
+             ActualCost = Consumption * Price,
+             PossibleCost = FlexConsumptionGood * Price) %>% 
+    ungroup() %>% 
+    group_by(Date = as.Date(DateTime, tz = "Europe/Brussels")) %>% 
+    summarize(ActualCost = sum(ActualCost, na.rm = TRUE),
+              PossibleCost = sum(PossibleCost, na.rm = TRUE)) %>% 
+    ungroup() %>% 
+    mutate(Potential = -(ActualCost - PossibleCost) / abs(ActualCost),
+           Week = case_when(isoweek(Date) >= 52 & month(Date) == 1 ~ 0,
+                            TRUE ~ isoweek(Date)),
+           Weekday = wday(Date, week_start = 1)) %>% 
+    select(Date, Weekday, Week, Potential)
+  
+})
+
+output$DailyCalendarPotential <- renderGirafe({
+  
+  plot <- ggplot(data = df_daily(),
+         mapping = aes(x = Weekday,
+                       y = Week,
+                       fill = Potential)) +
+    geom_tile_interactive(mapping = aes(tooltip = paste0("Savings potential on ",
+                                                         format(Date,
+                                                                "%d %B %Y"),
+                                                         ":\n",
+                                                         scales::percent(
+                                                           Potential,
+                                                           accuracy = .1,
+                                                           decimal.mark = ",",
+                                                           big.mark = ".")))) +
+    scale_x_continuous(name = element_blank(),
+                       breaks = seq(1, 7, 1),
+                       labels = c("M", "T", "W", "T", "F", "S", "S")) +
+    scale_y_reverse(name = element_blank()) +
+    scale_fill_gradient_interactive(high = "white",
+                                    low = "#90B44E",
+                                    limits = c(-1, 0),
+                                    na.value = "#485A27",
+                                    labels = 
+                                      scales::percent_format(accuracy = 1)) +
+    facet_wrap(~month(Date, label = TRUE),
+               scales = "free_y") +
+    theme_minimal() +
+    theme(panel.grid = element_blank(),
+          axis.text.y = element_blank())
+  
+  girafe(ggobj = plot,
+         width_svg = 10,
+         height_svg = 6,
+         options = list(
+           opts_selection(
+             type = "single"))) %>% 
+    girafe_options(opts_zoom(min = 1, max = 5))
+  
+})
+```
+
+```{r}
+#| label: fig-daily-calendar
+#| fig-cap: "Savings potential by shifting 100% consumption each day"
+#| column: body-outset
+girafeOutput("DailyCalendarPotential")
+```
+
+```{r}
+#| context: server
+output$YearlyConsumptionTable <- renderReactable({
+  
+  df() %>% 
+    mutate("NoShift" = Price * Consumption,
+           "GoodShift" = Price * FlexConsumptionGood,
+           "BadShift" = Price * FlexConsumptionBad) %>% 
+    group_by(Year = year(DateTime)) %>%
+    summarize(NoShift = sum(NoShift, na.rm = TRUE),
+              GoodShift = sum(GoodShift, na.rm = TRUE),
+              BadShift = sum(BadShift, na.rm = TRUE),
+              Consumption = sum(Consumption, na.rm = TRUE)) %>%
+    pivot_longer(-c(Year, Consumption), names_to = "Contract", values_to = "Cost") %>%
+    mutate(Contract = recode(Contract,
+                            "NoShift" = 
+                              "Dynamic without consumption shift",
+                            "GoodShift" = 
+                              "Dynamic with shift in right direction",
+                            "BadShift" = 
+                              "Dynamic with shift in wrong direction"),
+      ConsumptionShift = c(0, 
+                           input$Flexibility * .01, 
+                           input$Flexibility * .01),
+      TotalCost = Cost / 1000,
+      UnitCost = Cost / Consumption / 10) %>% 
+    select(Contract, ConsumptionShift, 
+           Consumption, TotalCost, UnitCost) %>% 
+    reactable(
+      columns = list(
+      Contract = colDef(name = ""),
+      ConsumptionShift = colDef(name = "Consumption shift",
+        format = colFormat(percent = TRUE,
+                           locales = "NL-be")),
+      Consumption = colDef(name = "Yearly consumption",
+        format = colFormat(separators = TRUE,
+                           suffix = " kWh",
+                           digits = 2,
+                           locales = "NL-be")),
+      TotalCost = colDef(name = "Yearly total cost",
+        format = colFormat(suffix = " €",
+                           digits = 2,
+                           locales = "NL-be")),
+      UnitCost = colDef(name = "Yearly unit cost (volume-weighted)",
+        format = colFormat(suffix = " c€/kWh",
+                           digits = 2,
+                           locales = "NL-be"))
+    )
+    )
+  
+}) 
+```
+
+```{r}
+reactableOutput("YearlyConsumptionTable")
+```
+
+```{r}
+#| context: server
+
+df_flexresults <- reactive({
+  
+  df_temp <- tibble()
+
+  for (f in seq(0, 1, .1)) {
+  
+  df_temp <- df() %>% 
+    select(DateTime, Price, Profile, Consumption) %>% 
+    group_by(Day = as.Date(DateTime, "Europe/Brussels")) %>% 
+    mutate(HighLow = case_when(rank(-Price, ties.method = "random") %in% 
+                                 1:input$FlexibleHours ~ "H",
+                               rank(Price, ties.method = "random") %in% 
+                                 1:input$FlexibleHours ~ "L",
+                               TRUE ~ NA),
+           FlexConsGood = case_when(HighLow == "H" ~ Consumption * (1 - f),
+                                    HighLow == "L" ~ Consumption + (sum(Consumption[HighLow == "H"], na.rm = TRUE) * f) / input$FlexibleHours,
+                                    TRUE ~ Consumption),
+           FlexConsBad = case_when(HighLow == "L" ~ Consumption * (1 - f),
+                                   HighLow == "H" ~ Consumption + (sum(Consumption[HighLow == "L"], na.rm = TRUE) * f) / input$FlexibleHours,
+                                   TRUE ~ Consumption)) %>% 
+    ungroup() %>% 
+    mutate(FlexGood = FlexConsGood * Price / 1000,
+           FlexBad = FlexConsBad * Price / 1000) %>% 
+    summarize(FlexGood = sum(FlexGood, na.rm = TRUE),
+              FlexBad = sum(FlexBad, na.rm = TRUE)) %>% 
+    mutate(Percentage = f) %>% 
+    rbind(df_temp)
+  }
+  
+  df_temp
+  
+})
+
+df_longflex <- reactive({
+  df_flexresults() %>%
+  pivot_longer(-Percentage, names_to = "Direction", values_to = "Cost") %>%
+  mutate(Direction = str_remove(Direction, "Flex"))
+})
+
+output$FlexResults <- renderGirafe({
+
+  plot <- ggplot(data = df_longflex(),
+                 mapping = aes(x = Percentage, y = Cost, 
+                               colour = Direction, fill = Direction)) +
+  geom_ribbon(inherit.aes = FALSE,
+              data = df_flexresults(),
+              mapping = aes(x = Percentage, ymax = FlexBad, ymin = FlexGood),
+              fill = "lightgrey", alpha = .4) +
+  geom_line() +
+  geom_point_interactive(colour = "white", shape = 21, size = 2.5,
+             mapping = aes(tooltip = paste0("Yearly cost with ",
+                                            scales::percent(Percentage, 
+                                                            accuracy = 1),
+                                            " consumption shift\n",
+                                            "in the ",
+                                            tolower(Direction),
+                                            " direction:\n",
+                                            format(round(Cost, 1),
+                                                   big.mark = ".",
+                                                   decimal.mark = ","),
+                                            " €"))) +
+  geom_point_interactive(inherit.aes = FALSE,
+                         mapping = aes(x = 0, 
+                                       y = Cost[Percentage == 0 & 
+                                                  Direction == "Good"],
+                                       tooltip = paste0("Yearly cost with 0% consumption shift:\n",
+                                            format(round(Cost, 1),
+                                                   big.mark = ".",
+                                                   decimal.mark = ","),
+                                            " €")),
+                         colour = "white", fill = "darkgrey", shape = 21, 
+                         size = 2.5) +
+  scale_fill_manual(name = "Shift in consumption pattern",
+                    values = c("Bad" = "#fd7f6f",
+                               "Good" = "#b2e061"),
+                    labels = c("Bad" = "in the bad direction",
+                               "Good" = "in the good direction")) +
+  scale_colour_manual(name = "Shift in consumption pattern",
+                      values = c("Bad" = "#fd7f6f",
+                               "Good" = "#b2e061"),
+                      labels = c("Bad" = "in the bad direction",
+                               "Good" = "in the good direction")) +
+  geom_segment(inherit.aes = FALSE,
+               data = filter(df_flexresults(), Percentage == 1),
+               mapping = aes(x = 1.04, xend = 1.04, 
+                             y = FlexBad * .98, yend = FlexGood * 1.03),
+               arrow = arrow(length = unit(.1, "cm"),
+                             ends = "both", type = "closed"),
+               colour = "darkgrey", linewidth = .25) +
+  geom_text(inherit.aes = FALSE,
+            data = filter(df_longflex(), Percentage == 1),
+            mapping = aes(x = 1.02, y = Cost, 
+                          label = paste0(round(Cost, 1), " €"), 
+                          colour = Direction),
+            hjust = 0, size = 3, show.legend = FALSE) +
+  scale_x_continuous(name = element_blank(),
+                     breaks = seq(0, 1, .1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(name = element_blank(),
+                     breaks = seq(0, 1000, 50),
+                     labels = scales::number_format(suffix = " €")) +
+    coord_cartesian(xlim = c(0, 1),
+                  clip = "off") +
+    theme_minimal() +
+    theme(plot.margin = margin(5.5, 55, 5.5, 5.5, "pt"),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.major.x = element_blank(),
+          legend.position = "bottom")
+  
+  girafe(ggobj = plot,
+         width_svg = 10,
+         height_svg = 6,
+         options = list(
+           opts_selection(
+             type = "single"))) %>% 
+    girafe_options(opts_zoom(min = 1, max = 5))
+})
+```
+
+Finally, the total cost of the energy component is shown in function of the share of the consumption that is shifted (in either direction), in @fig-flex-results.
+
+```{r}
+#| label: fig-flex-results
+#| fig-cap: "Yearly cost of dynamic price contract in function of flexibility"
+#| column: body-outset
+girafeOutput("FlexResults")
+
+```
+
+## About this tool
+
+This application was generated using R, Quarto and Shiny apps. It uses publicly available data (Synergrid's Real Load Profiles and Entso-E Transparency Platform's day-ahead prices for Belgium).
+
+The tool is a personal project, written by Nico Schoutteet. Questions, comments and suggestions may be addressed to the author via LinkedIn or e-mail.
+
+{{< bi linkedin color=#0077B5 size=20px >}} [LinkedIn profile](https://www.linkedin.com/in/nicoschoutteet/ "External link to LinkedIn profile"){target="_blank"}
+
+{{< bi mailbox size=20px >}} [E-mail](mailto:n.schoutteet@gmail.com "Send e-mail")
+
+The source code for this tool is available via GitHub.
+
+{{< bi github size=20px >}} [GitHub repository](https://github.com/nicoschoutteet/DynamicPrices "Link to GitHub repository"){target="_blank"}

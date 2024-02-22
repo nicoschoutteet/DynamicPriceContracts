@@ -1,0 +1,212 @@
+library(tidyverse)
+library(CREG)
+
+df_price <- read_csv("data/20200101-20231231 Belgian day-ahead prices.csv") %>% 
+  mutate(DateTime = with_tz(DateTime, "Europe/Brussels")) %>% 
+  filter(year(DateTime) == 2023)
+
+df_RLP <- read_csv("data/rlp0n2023-electricity-all-dsos.csv") %>% 
+  mutate(DateTime = parse_date_time(CET, "%d/%m/%Y %H:%M")) %>% 
+  rowwise() %>% 
+  mutate(SLP_FL = mean(`Fluvius Antwerpen`, `Fluvius Limburg`, `Fluvius West`, `GASELWEST`,
+                       `IMEWO`, `INTERGEM`, `Iveka`, `IVERLEK 1`, `IVERLEK 2`, `PBE Vlaanderen`)) %>% 
+  select(DateTime, SLP_FL) %>% 
+  group_by(DateTime = floor_date(DateTime, "hour")) %>% 
+  summarize(Profile = sum(SLP_FL, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(DateTime = seq.POSIXt(as.POSIXct("2023-01-01 00:00", "Europe/Brussels"),
+                               as.POSIXct("2023-12-31 23:45", "Europe/Brussels"), 
+                               by = "1 hour"))
+
+df <- tibble()
+
+for (f in seq(0, 1, .1)) {
+  
+  df <- left_join(df_price, df_RLP) %>% 
+    mutate(Consumption = Profile * 3.5) %>% 
+    group_by(Day = as.Date(DateTime, "Europe/Brussels")) %>% 
+    mutate(HighLow = case_when(rank(-Price, ties.method = "random") %in% 1:6 ~ "H",
+                               rank(Price, ties.method = "random") %in% 1:6 ~ "L",
+                               TRUE ~ NA),
+           FlexConsGood = case_when(HighLow == "H" ~ Consumption * (1 - f),
+                                    HighLow == "L" ~ Consumption + (sum(Consumption[HighLow == "H"], na.rm = TRUE) * f) / 6,
+                                    TRUE ~ Consumption),
+           FlexConsBad = case_when(HighLow == "L" ~ Consumption * (1 - f),
+                                   HighLow == "H" ~ Consumption + (sum(Consumption[HighLow == "H"], na.rm = TRUE) * f) / 6,
+                                   TRUE ~ Consumption)) %>% 
+    ungroup() %>% 
+    mutate(FlexGood = FlexConsGood * (1.05 * Price + 10),
+           FlexBad = FlexConsBad * (1.05 * Price + 10)) %>% 
+    summarize(FlexGood = sum(FlexGood, na.rm = TRUE) + 70,
+              FlexBad = sum(FlexBad, na.rm = TRUE) + 70) %>% 
+    mutate(Percentage = f) %>% 
+    rbind(df)
+}
+
+df_long <- df %>% 
+  pivot_longer(-Percentage, names_to = "Direction", values_to = "Cost") %>% 
+  mutate(Direction = str_remove(Direction, "Flex"))
+
+ggplot(data = df_long,
+       mapping = aes(x = Percentage, y = Cost, colour = Direction, fill = Direction)) +
+  geom_ribbon(inherit.aes = FALSE,
+              data = df,
+              mapping = aes(x = Percentage, ymax = FlexBad, ymin = FlexGood),
+              fill = CREG_grey1, alpha = .4) +
+  geom_line() +
+  geom_point(colour = "white", shape = 21) +
+  geom_point(inherit.aes = FALSE,
+             mapping = aes(x = 0, y = Cost[Percentage == 0 & Direction == "Good"]),
+             colour = "white", fill = CREG_grey2, shape = 21, size = 2.5) +
+  annotate(geom = "text",
+           x = -.04, y = 490,
+           label = "Geen wijziging van \nconsumptiepatroon:\n476.9 €",
+           size = 3, hjust = 0, vjust = 0) +
+  scale_fill_manual(name = "Wijziging consumptiepatroon",
+                    values = c("Bad" = CREG_red,
+                               "Good" = CREG_green),
+                    labels = c("Bad" = "in de foute richting",
+                               "Good" = "in de goede richting")) +
+  scale_colour_manual(name = "Wijziging consumptiepatroon",
+                      values = c("Bad" = CREG_red,
+                                 "Good" = CREG_green),
+                      labels = c("Bad" = "in de foute richting",
+                                 "Good" = "in de goede richting")) +
+  geom_segment(inherit.aes = FALSE,
+               data = filter(df, Percentage == 1),
+               mapping = aes(x = 1.06, xend = 1.06, y = FlexBad * .98, yend = FlexGood * 1.03),
+               arrow = arrow(length = unit(.1, "cm"),
+                             ends = "both", type = "closed"),
+               colour = CREG_grey2, linewidth = .25) +
+  geom_text(inherit.aes = FALSE,
+            data = filter(df_long, Percentage == 1),
+            mapping = aes(x = 1.02, y = Cost, label = paste0(round(Cost, 1), " €"), colour = Direction),
+            hjust = 0, size = 3, show.legend = FALSE) +
+  scale_x_continuous(name = element_blank(),
+                     breaks = seq(0, 1, .1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(name = element_blank(),
+                     breaks = seq(0, 1000, 50),
+                     labels = scales::number_format(suffix = " €")) +
+  coord_cartesian(ylim = c(400, 600),
+                  xlim = c(0, 1),
+                  clip = "off") +
+  theme_CREG() +
+  theme(axis.line = element_blank(),
+        plot.margin = margin(.5, 1, .5, .5, "cm"))
+
+ggsave("output/20240214 dyntar savings potential NL.png", width = 16, height = 10, units = "cm", dpi = 900)
+
+ggplot(data = df_long,
+       mapping = aes(x = Percentage, y = Cost, colour = Direction, fill = Direction)) +
+  geom_ribbon(inherit.aes = FALSE,
+              data = df,
+              mapping = aes(x = Percentage, ymax = FlexBad, ymin = FlexGood),
+              fill = CREG_grey1, alpha = .4) +
+  geom_line() +
+  geom_point(colour = "white", shape = 21) +
+  geom_point(inherit.aes = FALSE,
+             mapping = aes(x = 0, y = Cost[Percentage == 0 & Direction == "Good"]),
+             colour = "white", fill = CREG_grey2, shape = 21, size = 2.5) +
+  annotate(geom = "text",
+           x = -.04, y = 490,
+           label = "Pas de changement dans\nle profil de consommation:\n476.9 €",
+           size = 3, hjust = 0, vjust = 0) +
+  scale_fill_manual(name = "Changement dans le profil de consommation",
+                    values = c("Bad" = CREG_red,
+                               "Good" = CREG_green),
+                    labels = c("Bad" = "dans la mauvaise direction",
+                               "Good" = "dans la bonne direction")) +
+  scale_colour_manual(name = "Changement dans le profil de consommation",
+                      values = c("Bad" = CREG_red,
+                                 "Good" = CREG_green),
+                      labels = c("Bad" = "dans la mauvaise direction",
+                                 "Good" = "dans la bonne direction")) +
+  geom_segment(inherit.aes = FALSE,
+               data = filter(df, Percentage == 1),
+               mapping = aes(x = 1.06, xend = 1.06, y = FlexBad * .98, yend = FlexGood * 1.03),
+               arrow = arrow(length = unit(.1, "cm"),
+                             ends = "both", type = "closed"),
+               colour = CREG_grey2, linewidth = .25) +
+  geom_text(inherit.aes = FALSE,
+            data = filter(df_long, Percentage == 1),
+            mapping = aes(x = 1.02, y = Cost, label = paste0(round(Cost, 1), " €"), colour = Direction),
+            hjust = 0, size = 3, show.legend = FALSE) +
+  scale_x_continuous(name = element_blank(),
+                     breaks = seq(0, 1, .1),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(name = element_blank(),
+                     breaks = seq(0, 1000, 50),
+                     labels = scales::number_format(suffix = " €")) +
+  coord_cartesian(ylim = c(400, 600),
+                  xlim = c(0, 1),
+                  clip = "off") +
+  theme_CREG() +
+  theme(axis.line = element_blank(),
+        plot.margin = margin(.5, 1, .5, .5, "cm"))
+
+ggsave("output/20240214 dyntar savings potential FR.png", width = 16, height = 10, units = "cm", dpi = 900)
+
+
+
+ggplot(data = filter(df_price, as.Date(DateTime, tz = "Europe/Brussels") == as.Date("2023-05-29", tz = "Europe/Brussels")),
+       mapping = aes(x = hour(DateTime), y = Price)) +
+  geom_hline(yintercept = 0,
+             linewidth = .25, colour = CREG_grey2, linetype = "dashed") +
+  geom_text(data = filter(df_price, as.Date(DateTime, tz = "Europe/Brussels") == as.Date("2023-05-29", tz = "Europe/Brussels") & hour(DateTime) %in% c(11, 12, 13, 14, 15, 15, 16)),
+            mapping = aes(y = Price + 2, label = "L"),
+            vjust = 0, size = 2.5) +
+  geom_text(data = filter(df_price, as.Date(DateTime, tz = "Europe/Brussels") == as.Date("2023-05-29", tz = "Europe/Brussels") & hour(DateTime) %in% c(0, 19, 20, 21, 22, 23)),
+            mapping = aes(y = Price + 2, label = "H"),
+            vjust = 0, size = 2.5) +
+  geom_step(direction = "mid",
+            colour = CREG_blue1) +
+  scale_x_continuous(name = element_blank(),
+                   breaks = seq(0, 23, 1),
+                   expand = c(0, 0)) +
+  scale_y_continuous(name = element_blank(),
+                     breaks = seq(-100, 100, 50),
+                     labels = c(-100, -50, 0, 50, "100\n€/MWh")) +
+  coord_cartesian(ylim = c(-100, 100),
+                  xlim = c(0, 23),
+                  clip = "off") +
+  theme_CREG() +
+  theme(axis.line = element_blank())
+
+ggsave("output/20240214 day ahead price example.png", width = 16, height = 10, units = "cm", dpi = 900)
+
+df_RLP_ex <- df_RLP %>% 
+  filter(as.Date(DateTime, tz = "Europe/Brussels") == as.Date("2023-05-29", tz = "Europe/Brussels")) %>% 
+  mutate(Consumption = Profile * 3500,
+         ConsumptionGood = case_when(hour(DateTime) %in% c(0, 19, 20, 21, 22, 23) ~ Consumption * .5,
+                                     hour(DateTime) %in% c(11, 12, 13, 14, 15, 15, 16) ~ Consumption + sum(Consumption[hour(DateTime) %in% c(0, 19, 20, 21, 22, 23)], na.rm = TRUE) * .5 / 6,
+                                     TRUE ~ Consumption),
+         ConsumptionBad = case_when(hour(DateTime) %in% c(11, 12, 13, 14, 15, 15, 16) ~ Consumption * .5,
+                                     hour(DateTime) %in% c(0, 19, 20, 21, 22, 23) ~ Consumption + sum(Consumption[hour(DateTime) %in% c(11, 12, 13, 14, 15, 15, 16)], na.rm = TRUE) * .5 / 6,
+                                     TRUE ~ Consumption))
+
+ggplot(data = df_RLP_ex,
+       mapping = aes(x = hour(DateTime))) +
+  geom_step(direction = "mid",
+            mapping = aes(y = ConsumptionGood),
+            colour = CREG_green) +
+  geom_step(direction = "mid",
+            mapping = aes(y = ConsumptionBad),
+            colour = CREG_red) +
+  geom_step(direction = "mid",
+            mapping = aes(y = Consumption),
+            colour = CREG_blue1) + 
+  scale_x_continuous(name = element_blank(),
+                     breaks = seq(0, 23, 1),
+                     expand = c(0, 0)) +
+  scale_y_continuous(name = element_blank(),
+                     breaks = seq(0, 1, .2),
+                     labels = c(0, 0.2, 0.4, 0.6, .8, "1 kWh")) +
+  coord_cartesian(ylim = c(0, 1),
+                  xlim = c(0, 23),
+                  expand = FALSE,
+                  clip = "off") +
+  theme_CREG() +
+  theme(axis.line = element_blank())
+
+ggsave("output/20240214 consumption example.png", width = 16, height = 10, units = "cm", dpi = 900)
